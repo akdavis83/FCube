@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure Fire Cube - Scroll to Ignite</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(ellipse at center, #1a0000 0%, #000000 100%);
+            font-family: 'Orbitron', monospace;
+            height: 500vh; /* Make it scrollable for fire intensity effect */
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        #fire-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .fire-hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #ff4500;
+            font-size: 14px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ff4500;
+            box-shadow: 0 0 20px rgba(255, 69, 0, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .fire-meter {
+            width: 200px;
+            height: 10px;
+            background: #333;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 10px 0;
+            border: 1px solid #ff4500;
+        }
+
+        .fire-level {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4500, #ff6500, #ff8500, #ffaa00);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px rgba(255, 69, 0, 0.8);
+        }
+
+        .scroll-instruction {
+            position: fixed;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff4500;
+            font-size: 18px;
+            z-index: 1000;
+            text-align: center;
+            animation: pulse 2s infinite;
+            text-shadow: 0 0 10px rgba(255, 69, 0, 0.8);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+            50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+        }
+
+        .fire-particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: radial-gradient(circle, #ff4500, transparent);
+            border-radius: 50%;
+            animation: float 3s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(100vh) scale(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-20px) scale(1); opacity: 0; }
+        }
+
+        .temperature-display {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            color: #ff4500;
+            font-size: 24px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ff4500;
+            box-shadow: 0 0 20px rgba(255, 69, 0, 0.5);
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .temp-value {
+            font-size: 36px;
+            font-weight: 900;
+            text-shadow: 0 0 15px rgba(255, 69, 0, 1);
+        }
+    </style>
+</head>
+<body>
+    <div id="fire-container"></div>
+    
+    <div class="fire-hud">
+        <div style="color: #ffaa00; font-weight: bold; margin-bottom: 10px;">🔥 FIRE CUBE CONTROL</div>
+        <div>Rotation Speed: <span id="rotation-speed">1.0x</span></div>
+        <div>Fire Intensity: <span id="fire-intensity">Low</span></div>
+        <div class="fire-meter">
+            <div class="fire-level" id="fire-level"></div>
+        </div>
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;">
+            Scroll down to increase the fire!
+        </div>
+    </div>
+
+    <div class="temperature-display">
+        <div style="font-size: 14px;">TEMPERATURE</div>
+        <div class="temp-value" id="temperature">25°C</div>
+        <div style="font-size: 12px; opacity: 0.8;">Core Heat</div>
+    </div>
+
+    <div class="scroll-instruction">
+        ⬇️ Scroll Down to Ignite the Fire Cube ⬇️
+    </div>
+
+    <div class="fire-particles" id="particles"></div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+    <!-- Anime.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        document.getElementById('fire-container').appendChild(renderer.domElement);
+
+        // Camera position
+        camera.position.z = 5;
+
+        // Lighting setup for fire effect
+        const ambientLight = new THREE.AmbientLight(0x331100, 0.3);
+        scene.add(ambientLight);
+
+        const pointLight1 = new THREE.PointLight(0xff4500, 2, 50);
+        pointLight1.position.set(5, 5, 5);
+        pointLight1.castShadow = true;
+        scene.add(pointLight1);
+
+        const pointLight2 = new THREE.PointLight(0xff6500, 1.5, 30);
+        pointLight2.position.set(-5, -5, 3);
+        scene.add(pointLight2);
+
+        const pointLight3 = new THREE.PointLight(0xffaa00, 1, 20);
+        pointLight3.position.set(0, 5, -5);
+        scene.add(pointLight3);
+
+        // Create fire texture using canvas
+        function createFireTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // Create fire gradient
+            const gradient = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+            gradient.addColorStop(0, '#ffff00');
+            gradient.addColorStop(0.2, '#ff8800');
+            gradient.addColorStop(0.4, '#ff4500');
+            gradient.addColorStop(0.6, '#cc2200');
+            gradient.addColorStop(0.8, '#880000');
+            gradient.addColorStop(1, '#440000');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Add noise for fire texture
+            const imageData = ctx.getImageData(0, 0, 512, 512);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const noise = Math.random() * 0.3;
+                data[i] = Math.min(255, data[i] + noise * 100);     // Red
+                data[i + 1] = Math.min(255, data[i + 1] + noise * 50); // Green
+                data[i + 2] = Math.max(0, data[i + 2] - noise * 50);   // Blue
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Create animated fire texture
+        function createAnimatedFireTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            function updateFireTexture(time) {
+                ctx.clearRect(0, 0, 256, 256);
+                
+                // Create animated fire pattern
+                for (let x = 0; x < 256; x += 4) {
+                    for (let y = 0; y < 256; y += 4) {
+                        const noise = Math.sin(x * 0.02 + time * 0.01) * Math.cos(y * 0.02 + time * 0.015);
+                        const intensity = Math.max(0, noise + 0.5);
+                        
+                        const red = Math.floor(255 * intensity);
+                        const green = Math.floor(150 * intensity * 0.6);
+                        const blue = Math.floor(50 * intensity * 0.3);
+                        
+                        ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+                        ctx.fillRect(x, y, 4, 4);
+                    }
+                }
+                
+                fireTexture.needsUpdate = true;
+            }
+
+            const fireTexture = new THREE.CanvasTexture(canvas);
+            fireTexture.updateFunction = updateFireTexture;
+            return fireTexture;
+        }
+
+        // Create fire materials for each face
+        const fireTexture = createAnimatedFireTexture();
+        const fireMaterials = [
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xff4500),
+                emissiveIntensity: 0.5,
+                transparent: true,
+                opacity: 0.9
+            }),
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xff6500),
+                emissiveIntensity: 0.6,
+                transparent: true,
+                opacity: 0.9
+            }),
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xff8500),
+                emissiveIntensity: 0.4,
+                transparent: true,
+                opacity: 0.9
+            }),
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xffaa00),
+                emissiveIntensity: 0.7,
+                transparent: true,
+                opacity: 0.9
+            }),
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xff2200),
+                emissiveIntensity: 0.8,
+                transparent: true,
+                opacity: 0.9
+            }),
+            new THREE.MeshStandardMaterial({ 
+                map: fireTexture,
+                emissive: new THREE.Color(0xff7700),
+                emissiveIntensity: 0.5,
+                transparent: true,
+                opacity: 0.9
+            })
+        ];
+
+        // Create cube geometry
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
+        const cube = new THREE.Mesh(geometry, fireMaterials);
+        cube.castShadow = true;
+        cube.receiveShadow = true;
+        scene.add(cube);
+
+        // Create flame geometry and material
+        const flameGeometry = new THREE.ConeGeometry(0.8, 2.5, 8);
+        const flameMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0.0 },
+                intensity: { value: 0.0 },
+                color1: { value: new THREE.Color(0xff4500) },
+                color2: { value: new THREE.Color(0xffaa00) },
+                color3: { value: new THREE.Color(0xff0000) }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float intensity;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vIntensity;
+                
+                void main() {
+                    vUv = uv;
+                    vPosition = position;
+                    vIntensity = intensity;
+                    
+                    vec3 pos = position;
+                    
+                    // Create flame flickering effect
+                    float flicker = sin(time * 8.0 + position.y * 3.0) * 0.1 * intensity;
+                    float flicker2 = cos(time * 12.0 + position.x * 4.0) * 0.08 * intensity;
+                    float flicker3 = sin(time * 15.0 + position.z * 5.0) * 0.06 * intensity;
+                    
+                    pos.x += flicker + flicker2;
+                    pos.z += flicker3 + flicker;
+                    
+                    // Make flame taller with intensity
+                    pos.y *= (1.0 + intensity * 0.8);
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float intensity;
+                uniform vec3 color1;
+                uniform vec3 color2;
+                uniform vec3 color3;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vIntensity;
+                
+                void main() {
+                    vec2 uv = vUv;
+                    
+                    // Create flame gradient from bottom to top
+                    float gradient = 1.0 - uv.y;
+                    
+                    // Add noise for flame texture
+                    float noise1 = sin(uv.x * 10.0 + time * 5.0) * cos(uv.y * 8.0 + time * 3.0);
+                    float noise2 = sin(uv.x * 15.0 + time * 7.0) * cos(uv.y * 12.0 + time * 4.0);
+                    float noise = (noise1 + noise2) * 0.1;
+                    
+                    gradient += noise;
+                    gradient = clamp(gradient, 0.0, 1.0);
+                    
+                    // Mix colors based on gradient and intensity
+                    vec3 color;
+                    if (gradient > 0.7) {
+                        color = mix(color2, color3, (gradient - 0.7) / 0.3);
+                    } else if (gradient > 0.3) {
+                        color = mix(color1, color2, (gradient - 0.3) / 0.4);
+                    } else {
+                        color = color1;
+                    }
+                    
+                    // Fade out at edges
+                    float edgeFade = 1.0 - length(uv - vec2(0.5)) * 2.0;
+                    edgeFade = clamp(edgeFade, 0.0, 1.0);
+                    
+                    // Apply intensity and edge fade
+                    float alpha = gradient * edgeFade * vIntensity;
+                    alpha = clamp(alpha, 0.0, 1.0);
+                    
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide
+        });
+
+        const flame = new THREE.Mesh(flameGeometry, flameMaterial);
+        flame.position.y = 2.2; // Position above the cube
+        flame.scale.set(0, 0, 0); // Start invisible
+        scene.add(flame);
+
+        // Create additional flame particles
+        const flameParticles = [];
+        const particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+        
+        for (let i = 0; i < 20; i++) {
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: new THREE.Color().setHSL(0.1, 1, 0.5 + Math.random() * 0.5),
+                transparent: true,
+                opacity: 0
+            });
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+            particle.position.set(
+                (Math.random() - 0.5) * 2,
+                1 + Math.random() * 3,
+                (Math.random() - 0.5) * 2
+            );
+            particle.userData = {
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.02,
+                    0.02 + Math.random() * 0.03,
+                    (Math.random() - 0.5) * 0.02
+                ),
+                life: Math.random()
+            };
+            flameParticles.push(particle);
+            scene.add(particle);
+        }
+
+        // Animation variables
+        let baseRotationSpeed = 0.01;
+        let currentRotationSpeed = baseRotationSpeed;
+        let scrollMultiplier = 1;
+        let fireIntensity = 0;
+        let flameIgnited = false;
+
+        // Anime.js rotation animation
+        let rotationAnimation = anime({
+            targets: cube.rotation,
+            x: '+=6.28', // 2π radians = 360 degrees
+            y: '+=6.28',
+            z: '+=3.14', // Half rotation on Z for variety
+            duration: 10000,
+            easing: 'linear',
+            loop: true
+        });
+
+        // Scroll event handler
+        window.addEventListener('scroll', () => {
+            const scrollPosition = window.scrollY;
+            const maxScroll = document.body.scrollHeight - window.innerHeight;
+            const scrollPercent = Math.min(scrollPosition / maxScroll, 1);
+            
+            // Update fire intensity based on scroll
+            fireIntensity = scrollPercent;
+            scrollMultiplier = 1 + scrollPercent * 4; // Up to 5x speed
+            
+            // Update rotation speed with anime.js
+            rotationAnimation.speed = scrollMultiplier;
+            
+            // Update UI
+            document.getElementById('rotation-speed').textContent = scrollMultiplier.toFixed(1) + 'x';
+            document.getElementById('fire-level').style.width = (scrollPercent * 100) + '%';
+            
+            const intensityLevels = ['Low', 'Medium', 'High', 'Extreme', 'INFERNO!'];
+            const intensityIndex = Math.floor(scrollPercent * (intensityLevels.length - 1));
+            document.getElementById('fire-intensity').textContent = intensityLevels[intensityIndex];
+            
+            // Update temperature
+            const temperature = Math.floor(25 + scrollPercent * 975); // 25°C to 1000°C
+            document.getElementById('temperature').textContent = temperature + '°C';
+            
+            // Update light intensity
+            pointLight1.intensity = 2 + scrollPercent * 3;
+            pointLight2.intensity = 1.5 + scrollPercent * 2;
+            pointLight3.intensity = 1 + scrollPercent * 2;
+            
+            // Update emissive intensity
+            fireMaterials.forEach((material, index) => {
+                material.emissiveIntensity = 0.5 + scrollPercent * (1 + index * 0.2);
+            });
+            
+            // Update flame intensity and ignition
+            flameMaterial.uniforms.intensity.value = scrollPercent;
+            
+            // Ignite flame when scroll reaches 20%
+            if (scrollPercent > 0.2 && !flameIgnited) {
+                flameIgnited = true;
+                // Animate flame appearance
+                anime({
+                    targets: flame.scale,
+                    x: 1,
+                    y: 1,
+                    z: 1,
+                    duration: 1000,
+                    easing: 'easeOutElastic(1, .8)'
+                });
+            }
+            
+            // Scale flame with intensity
+            if (flameIgnited) {
+                const flameScale = 0.5 + scrollPercent * 1.5;
+                flame.scale.set(flameScale, flameScale, flameScale);
+            }
+            
+            // Update flame particles opacity
+            flameParticles.forEach(particle => {
+                particle.material.opacity = scrollPercent * 0.8;
+            });
+            
+            // Create fire particles
+            if (scrollPercent > 0.3) {
+                createFireParticles(scrollPercent);
+            }
+        });
+
+        // Fire particles system
+        function createFireParticles(intensity) {
+            if (Math.random() < intensity * 0.1) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * window.innerWidth + 'px';
+                particle.style.animationDuration = (2 + Math.random() * 2) + 's';
+                particle.style.animationDelay = Math.random() * 0.5 + 's';
+                
+                document.getElementById('particles').appendChild(particle);
+                
+                // Remove particle after animation
+                setTimeout(() => {
+                    if (particle.parentNode) {
+                        particle.parentNode.removeChild(particle);
+                    }
+                }, 4000);
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = Date.now() * 0.001;
+            
+            // Update fire texture animation
+            if (fireTexture.updateFunction) {
+                fireTexture.updateFunction(time * 1000);
+            }
+            
+            // Update flame shader time
+            flameMaterial.uniforms.time.value = time;
+            
+            // Animate lights
+            pointLight1.position.x = Math.sin(time * 2) * 3;
+            pointLight1.position.z = Math.cos(time * 2) * 3;
+            
+            pointLight2.position.x = Math.cos(time * 1.5) * 4;
+            pointLight2.position.y = Math.sin(time * 1.5) * 2;
+            
+            pointLight3.position.y = Math.sin(time * 1.8) * 3;
+            pointLight3.position.z = Math.cos(time * 1.8) * 2;
+            
+            // Animate flame particles
+            flameParticles.forEach(particle => {
+                if (flameIgnited && fireIntensity > 0.2) {
+                    // Update particle position
+                    particle.position.add(particle.userData.velocity);
+                    
+                    // Reset particle if it goes too high
+                    if (particle.position.y > 6) {
+                        particle.position.set(
+                            (Math.random() - 0.5) * 2,
+                            1 + Math.random(),
+                            (Math.random() - 0.5) * 2
+                        );
+                    }
+                    
+                    // Update particle color based on height
+                    const height = (particle.position.y - 1) / 5;
+                    particle.material.color.setHSL(
+                        0.1 - height * 0.1, // Red to yellow
+                        1,
+                        0.5 + height * 0.5
+                    );
+                    
+                    // Add some random movement
+                    particle.userData.velocity.x += (Math.random() - 0.5) * 0.001;
+                    particle.userData.velocity.z += (Math.random() - 0.5) * 0.001;
+                    
+                    // Damping
+                    particle.userData.velocity.multiplyScalar(0.99);
+                }
+            });
+            
+            // Additional manual rotation for smooth effect
+            cube.rotation.x += currentRotationSpeed * 0.7;
+            cube.rotation.y += currentRotationSpeed * 1.2;
+            cube.rotation.z += currentRotationSpeed * 0.5;
+            
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+
+        // Hide scroll instruction after first scroll
+        let hasScrolled = false;
+        window.addEventListener('scroll', () => {
+            if (!hasScrolled && window.scrollY > 50) {
+                hasScrolled = true;
+                document.querySelector('.scroll-instruction').style.opacity = '0';
+                setTimeout(() => {
+                    document.querySelector('.scroll-instruction').style.display = 'none';
+                }, 2000);
+            }
+        });
+    </script>
+</body>
+</html>
